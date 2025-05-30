@@ -41,7 +41,8 @@ O arquivo `planilha.xlsx` deve conter uma aba chamada `Sheet1` com as seguintes 
 
 Para utilizar o script, você precisará ter o ambiente configurado com as dependências necessárias. Em seguida, execute o script:
 
-```bash
-python script.py
+``python script.py``
 
-[![screenshot](https://raw.githubusercontent.com/liamperfil/relatorio-dispensas-comprasnet/refs/heads/main/Screenshot_1.jpg)](#)
+## Imagem exemplo da planilha gerada
+
+[![screenshot](Screenshot_1.jpg)](#)
