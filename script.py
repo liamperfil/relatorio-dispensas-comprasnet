@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from bs4 import BeautifulSoup
 import openpyxl
-import shutil # Importar shutil aqui
+import shutil
 
 def iniciar_driver():
     options = webdriver.ChromeOptions()
@@ -19,10 +19,14 @@ def iniciar_driver():
 def log(mensagem, arquivo_log):
     """Logs messages to console and a specified file."""
     print(mensagem)
+    # Modificação: Garante que o diretório 'log' exista antes de escrever o arquivo
+    log_dir = os.path.dirname(arquivo_log)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     with open(arquivo_log, 'a', encoding='utf-8') as f:
         f.write(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} - {mensagem}\n')
 
-# Modificação: html_dir e nome_arquivo agora usam o formato YYYY-mm-dd-pgX.html
+# Modificação: html_dir e nome_arquivo agora usam o formato AAAA-mm-dd-pgX.html
 def salvar_html(driver, pagina, html_dir):
     """Saves the current page HTML to a file in the specified directory."""
     if not os.path.exists(html_dir):
@@ -133,47 +137,25 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
     workbook.save(nome_planilha)
     log(f"Dados salvos em {nome_planilha}.", log_filename) # Usa log_filename global
 
-def raspar_comprasnet(data_inicial, data_final, site):
+def raspar_comprasnet():
     """Automates the web scraping process."""
     driver = iniciar_driver()
     wait = WebDriverWait(driver, 60)
     
-    # Modificação: Define o nome do arquivo de log com timestamp
+    # Modificação: Define o nome do arquivo de log com timestamp e dentro do diretório 'log'
     global log_filename
     timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    log_filename = f'log_{timestamp}.txt'
+    log_filename = os.path.join('log', f'log_{timestamp}.txt') # Define o caminho completo para o log
 
     # Removido: Limpeza de arquivos e diretórios anteriores
-    # log("Iniciando limpeza de arquivos de execuções anteriores...", log_filename)
     html_dir = 'html'
-    # if os.path.exists(html_dir):
-    #     shutil.rmtree(html_dir) 
-    #     log(f"Diretório '{html_dir}' e seu conteúdo removidos.", log_filename)
-    # if os.path.exists('planilha.xlsx'):
-    #     os.remove('planilha.xlsx')
-    #     log("Arquivo 'planilha.xlsx' removido.", log_filename)
-    # if os.path.exists(log_filename):
-    #     os.remove(log_filename)
-    #     log("Arquivo de log anterior removido.", log_filename)
-    # log("Limpeza concluída.", log_filename)
 
-    log('Iniciando raspagem no Comprasnet...', log_filename)
+    log('Iniciando raspagem no Comprasnet...', log_filename) # log_filename agora é o caminho completo
 
     try:
-        driver.get(site)
+        driver.get("https://comprasnet3.ba.gov.br/CompraEletronica/ResultadoFiltro.asp?token=68385a59c508b")
         log('Site acessado.', log_filename)
-
-        # Preenche datas
-        log(f"Preenchendo data inicial: {data_inicial}", log_filename)
-        wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="txtDataInicioCotacao"]'))).send_keys(data_inicial)
-        log(f"Preenchendo data final: {data_final}", log_filename)
-        wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="txtDataFimCotacao"]'))).send_keys(data_final)
-
-        # Clica em pesquisar
-        log('Clicando no botão pesquisar...', log_filename)
-        wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="btnPesquisar"]'))).click()
-        log('Botão pesquisar clicado.', log_filename)
-
+        
         # Aguarda tabela
         log('Aguardando carregamento da tabela de resultados...', log_filename)
         wait.until(EC.visibility_of_element_located((By.ID, 'tblResultadoListaCount')))
@@ -223,8 +205,4 @@ def raspar_comprasnet(data_inicial, data_final, site):
         log('Navegador fechado. Processo de raspagem concluído.', log_filename)
 
 if __name__ == "__main__":
-    data_inicial = "29/05/2025"
-    data_final = "29/05/2025"
-    site = "https://comprasnet3.ba.gov.br/CompraEletronica/ResultadoFiltro.asp?token=68385a59c508b"
-
-    raspar_comprasnet(data_inicial, data_final, site)
+    raspar_comprasnet()
