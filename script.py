@@ -38,30 +38,41 @@ def extrair_dados_html(html_content, log_file='log.txt'):
     soup = BeautifulSoup(html_content, 'html.parser')
     dados_extraidos = []
 
-    # Find all main result tables, each potentially containing multiple dispenses
-    # These are the tables that encapsulate each 'dispensa' result
     main_dispense_tables = soup.find_all('table', id='tblResultadoLista')
 
     for main_table in main_dispense_tables:
-        # Within each main dispense table, find the child table that lists the items
+        numero_dispensa = ''
+        data_abertura = ''
+        main_table_body_row = main_table.find('tbody').find('tr', recursive=False)
+        if main_table_body_row:
+            cols_main = main_table_body_row.find_all('td', recursive=False)
+            if len(cols_main) > 0 and cols_main[0].find('a'):
+                numero_dispensa = cols_main[0].find('a').get_text(strip=True)
+            if len(cols_main) > 1:
+                data_abertura = cols_main[1].get_text(strip=True)
+
         child_table = main_table.find('table', id='tblResultadoLista_Child')
         
         if child_table:
-            # Important: Iterate over all <tbody> elements within tblResultadoLista_Child
-            # Each <tbody> seems to represent a block for a single item and its status
-            all_tbodies = child_table.find_all('tbody', recursive=False) # Only direct children
+            all_tbodies = child_table.find_all('tbody', recursive=False)
 
             for tbody in all_tbodies:
-                # Find the direct <tr> children within this tbody
-                # We are looking for the row that contains the item's data (7 columns)
                 item_row = None
+                situacao_item = ''
+
+                # Iterate through all direct tr children within the current tbody
                 for row in tbody.find_all('tr', recursive=False):
-                    cols = row.find_all('td', recursive=False) # Get direct td children
-                    # Check if it's an item row (7 columns, and first col does not have colspan)
+                    # Check if it's the item data row (7 tds and first td doesn't have colspan)
+                    cols = row.find_all('td', recursive=False)
                     if len(cols) == 7 and not cols[0].has_attr('colspan'):
                         item_row = row
-                        break # Found the item row for this tbody, move to extract
+                    
+                    # Check if it's the 'Situação do Item' row
+                    # This row has one td with colspan="7" and contains the specific text
+                    elif len(cols) == 1 and cols[0].has_attr('colspan') and 'Situação do Item:' in cols[0].get_text(strip=True):
+                        situacao_item = cols[0].get_text(strip=True).replace('Situação do Item:', '').strip()
                 
+                # Now process the extracted item_row and situacao_item
                 if item_row:
                     cols = item_row.find_all('td')
                     descricao = cols[0].get_text(strip=True) if len(cols) > 0 and cols[0] else ''
@@ -72,16 +83,13 @@ def extrair_dados_html(html_content, log_file='log.txt'):
                     unitario = cols[5].get_text(strip=True) if len(cols) > 5 and cols[5] else ''
                     total = cols[6].get_text(strip=True) if len(cols) > 6 and cols[6] else ''
 
-                    dados_extraidos.append([descricao, uf, vencedor, marca, qtde, unitario, total])
+                    dados_extraidos.append([numero_dispensa, data_abertura, descricao, uf, vencedor, marca, qtde, unitario, total, situacao_item])
                 else:
-                    # This branch will catch tbody sections that don't have a 7-column item row,
-                    # like those containing only 'Total da Dispensa' or empty rows.
                     log(f"Nenhuma linha de item com 7 colunas encontrada neste bloco <tbody>. Conteúdo do tbody: {tbody.get_text(strip=True)[:100]}...", log_file)
         else:
             log("Nenhuma tabela 'tblResultadoLista_Child' encontrada em uma tabela principal de dispensa.", log_file)
 
     return dados_extraidos
-
 
 def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
     """Adds extracted data to an Excel spreadsheet, creating it with headers if it doesn't exist."""
@@ -89,7 +97,7 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
         workbook = openpyxl.Workbook()
         sheet = workbook.active
         sheet.title = "Sheet1"
-        sheet.append(['Descrição', 'Uf', 'Vencedor', 'Marca', 'Qtde', 'Unitário', 'Total'])
+        sheet.append(['Número', 'Abertura', 'Descrição', 'Uf', 'Vencedor', 'Marca', 'Qtde', 'Unitário', 'Total', 'Situação do Item'])
         log(f"Criado novo arquivo Excel: {nome_planilha} com cabeçalhos.")
     else:
         try:
@@ -101,7 +109,7 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
             workbook = openpyxl.Workbook()
             sheet = workbook.active
             sheet.title = "Sheet1"
-            sheet.append(['Descrição', 'Uf', 'Vencedor', 'Marca', 'Qtde', 'Unitário', 'Total'])
+            sheet.append(['Número', 'Abertura', 'Descrição', 'Uf', 'Vencedor', 'Marca', 'Qtde', 'Unitário', 'Total', 'Situação do Item'])
             
     for row_data in dados:
         try:
@@ -199,8 +207,8 @@ def raspar_comprasnet(data_inicial, data_final, site):
         log('Navegador fechado. Processo de raspagem concluído.', log_file)
 
 if __name__ == "__main__":
-    data_inicial = "30/05/2025"
-    data_final = "30/05/2025"
+    data_inicial = "29/05/2025"
+    data_final = "29/05/2025"
     site = "https://comprasnet3.ba.gov.br/CompraEletronica/ResultadoFiltro.asp?token=68385a59c508b"
 
     raspar_comprasnet(data_inicial, data_final, site)
