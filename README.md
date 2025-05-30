@@ -44,5 +44,4 @@ Para utilizar o script, você precisará ter o ambiente configurado com as depen
 ```bash
 python script.py
 
-[![screenshot](Screenshot_1.jpg)](#)
-![Screenshot_1](Screenshot_1.jpg)
+[![screenshot](https://raw.githubusercontent.com/liamperfil/relatorio-dispensas-comprasnet/refs/heads/main/Screenshot_1.jpg)](#)
