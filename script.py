@@ -8,29 +8,36 @@ import os
 from datetime import datetime
 from bs4 import BeautifulSoup
 import openpyxl
+import shutil # Importar shutil aqui
 
 def iniciar_driver():
     options = webdriver.ChromeOptions()
     options.add_argument("--start-maximized")
     return webdriver.Chrome(options=options)
 
-def log(mensagem, arquivo_log='log.txt'):
+# Modificação: log_file agora é dinâmico, definido na função raspar_comprasnet
+def log(mensagem, arquivo_log):
     """Logs messages to console and a specified file."""
     print(mensagem)
     with open(arquivo_log, 'a', encoding='utf-8') as f:
         f.write(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} - {mensagem}\n')
 
-def salvar_html(driver, pagina, html_dir='html'):
+# Modificação: html_dir e nome_arquivo agora usam o formato YYYY-mm-dd-pgX.html
+def salvar_html(driver, pagina, html_dir):
     """Saves the current page HTML to a file in the specified directory."""
     if not os.path.exists(html_dir):
         os.makedirs(html_dir)
-        log(f"Diretório criado: {html_dir}")
-    nome_arquivo = os.path.join(html_dir, f'pagina_{pagina}.html')
+        log(f"Diretório criado: {html_dir}", log_filename) # Usa log_filename global
+    
+    # Formato AAAA-mm-dd-pgX.html
+    data_atual = datetime.now().strftime("%Y-%m-%d")
+    nome_arquivo = os.path.join(html_dir, f'{data_atual}-pg{pagina}.html')
+    
     with open(nome_arquivo, 'w', encoding='utf-8') as f:
         f.write(driver.page_source)
-    log(f"HTML salvo em {nome_arquivo}")
+    log(f"HTML salvo em {nome_arquivo}", log_filename) # Usa log_filename global
 
-def extrair_dados_html(html_content, log_file='log.txt'):
+def extrair_dados_html(html_content, log_file):
     """
     Extracts item data from the HTML content, specifically looking for
     child tables within each dispense result and all their items.
@@ -38,9 +45,12 @@ def extrair_dados_html(html_content, log_file='log.txt'):
     soup = BeautifulSoup(html_content, 'html.parser')
     dados_extraidos = []
 
+    # Find all main result tables, each potentially containing multiple dispenses
+    # These are the tables that encapsulate each 'dispensa' result
     main_dispense_tables = soup.find_all('table', id='tblResultadoLista')
 
     for main_table in main_dispense_tables:
+        # Extract Número and Abertura from the main table's tbody
         numero_dispensa = ''
         data_abertura = ''
         main_table_body_row = main_table.find('tbody').find('tr', recursive=False)
@@ -51,28 +61,30 @@ def extrair_dados_html(html_content, log_file='log.txt'):
             if len(cols_main) > 1:
                 data_abertura = cols_main[1].get_text(strip=True)
 
+
+        # Within each main dispense table, find the child table that lists the items
         child_table = main_table.find('table', id='tblResultadoLista_Child')
         
         if child_table:
-            all_tbodies = child_table.find_all('tbody', recursive=False)
+            # Important: Iterate over all <tbody> elements within tblResultadoLista_Child
+            # Each <tbody> seems to represent a block for a single item and its status
+            all_tbodies = child_table.find_all('tbody', recursive=False) # Only direct children
 
             for tbody in all_tbodies:
                 item_row = None
                 situacao_item = ''
 
-                # Iterate through all direct tr children within the current tbody
+                # Find the direct <tr> children within this tbody
+                # We are looking for the row that contains the item's data (7 columns)
                 for row in tbody.find_all('tr', recursive=False):
-                    # Check if it's the item data row (7 tds and first td doesn't have colspan)
-                    cols = row.find_all('td', recursive=False)
+                    cols = row.find_all('td', recursive=False) # Get direct td children
+                    # Check if it's an item row (7 columns, and first col does not have colspan)
                     if len(cols) == 7 and not cols[0].has_attr('colspan'):
                         item_row = row
-                    
                     # Check if it's the 'Situação do Item' row
-                    # This row has one td with colspan="7" and contains the specific text
                     elif len(cols) == 1 and cols[0].has_attr('colspan') and 'Situação do Item:' in cols[0].get_text(strip=True):
                         situacao_item = cols[0].get_text(strip=True).replace('Situação do Item:', '').strip()
                 
-                # Now process the extracted item_row and situacao_item
                 if item_row:
                     cols = item_row.find_all('td')
                     descricao = cols[0].get_text(strip=True) if len(cols) > 0 and cols[0] else ''
@@ -83,6 +95,7 @@ def extrair_dados_html(html_content, log_file='log.txt'):
                     unitario = cols[5].get_text(strip=True) if len(cols) > 5 and cols[5] else ''
                     total = cols[6].get_text(strip=True) if len(cols) > 6 and cols[6] else ''
 
+                    # Append the new fields: Número, Abertura, Situação do Item
                     dados_extraidos.append([numero_dispensa, data_abertura, descricao, uf, vencedor, marca, qtde, unitario, total, situacao_item])
                 else:
                     log(f"Nenhuma linha de item com 7 colunas encontrada neste bloco <tbody>. Conteúdo do tbody: {tbody.get_text(strip=True)[:100]}...", log_file)
@@ -91,6 +104,7 @@ def extrair_dados_html(html_content, log_file='log.txt'):
 
     return dados_extraidos
 
+
 def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
     """Adds extracted data to an Excel spreadsheet, creating it with headers if it doesn't exist."""
     if not os.path.exists(nome_planilha):
@@ -98,14 +112,14 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
         sheet = workbook.active
         sheet.title = "Sheet1"
         sheet.append(['Número', 'Abertura', 'Descrição', 'Uf', 'Vencedor', 'Marca', 'Qtde', 'Unitário', 'Total', 'Situação do Item'])
-        log(f"Criado novo arquivo Excel: {nome_planilha} com cabeçalhos.")
+        log(f"Criado novo arquivo Excel: {nome_planilha} com cabeçalhos.", log_filename) # Usa log_filename global
     else:
         try:
             workbook = openpyxl.load_workbook(nome_planilha)
             sheet = workbook['Sheet1']
-            log(f"Abrindo arquivo Excel existente: {nome_planilha}.")
+            log(f"Abrindo arquivo Excel existente: {nome_planilha}.", log_filename) # Usa log_filename global
         except Exception as e:
-            log(f"Erro ao abrir o arquivo Excel {nome_planilha}: {e}. Tentando criar um novo.", 'log.txt')
+            log(f"Erro ao abrir o arquivo Excel {nome_planilha}: {e}. Tentando criar um novo.", log_filename) # Usa log_filename global
             workbook = openpyxl.Workbook()
             sheet = workbook.active
             sheet.title = "Sheet1"
@@ -115,70 +129,72 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
         try:
             sheet.append(row_data)
         except Exception as e:
-            log(f"Erro ao adicionar linha {row_data} ao Excel: {e}", 'log.txt')
+            log(f"Erro ao adicionar linha {row_data} ao Excel: {e}", log_filename) # Usa log_filename global
     workbook.save(nome_planilha)
-    log(f"Dados salvos em {nome_planilha}.")
+    log(f"Dados salvos em {nome_planilha}.", log_filename) # Usa log_filename global
 
 def raspar_comprasnet(data_inicial, data_final, site):
     """Automates the web scraping process."""
     driver = iniciar_driver()
     wait = WebDriverWait(driver, 60)
-    log_file = 'log.txt' # Define log file here for consistent use
+    
+    # Modificação: Define o nome do arquivo de log com timestamp
+    global log_filename
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    log_filename = f'log_{timestamp}.txt'
 
-    # Clean up old files and directories before starting a new scrape
-    log("Iniciando limpeza de arquivos de execuções anteriores...", log_file)
+    # Removido: Limpeza de arquivos e diretórios anteriores
+    # log("Iniciando limpeza de arquivos de execuções anteriores...", log_filename)
     html_dir = 'html'
-    if os.path.exists(html_dir):
-        for f_name in os.listdir(html_dir):
-            os.remove(os.path.join(html_dir, f_name))
-        os.rmdir(html_dir)
-        log(f"Diretório '{html_dir}' e seu conteúdo removidos.", log_file)
-    if os.path.exists('planilha.xlsx'):
-        os.remove('planilha.xlsx')
-        log("Arquivo 'planilha.xlsx' removido.", log_file)
-    if os.path.exists(log_file):
-        os.remove(log_file)
-        log("Arquivo de log anterior removido.", log_file)
-    log("Limpeza concluída.", log_file)
+    # if os.path.exists(html_dir):
+    #     shutil.rmtree(html_dir) 
+    #     log(f"Diretório '{html_dir}' e seu conteúdo removidos.", log_filename)
+    # if os.path.exists('planilha.xlsx'):
+    #     os.remove('planilha.xlsx')
+    #     log("Arquivo 'planilha.xlsx' removido.", log_filename)
+    # if os.path.exists(log_filename):
+    #     os.remove(log_filename)
+    #     log("Arquivo de log anterior removido.", log_filename)
+    # log("Limpeza concluída.", log_filename)
 
-    log('Iniciando raspagem no Comprasnet...', log_file)
+    log('Iniciando raspagem no Comprasnet...', log_filename)
 
     try:
         driver.get(site)
-        log('Site acessado.', log_file)
+        log('Site acessado.', log_filename)
 
         # Preenche datas
-        log(f"Preenchendo data inicial: {data_inicial}", log_file)
+        log(f"Preenchendo data inicial: {data_inicial}", log_filename)
         wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="txtDataInicioCotacao"]'))).send_keys(data_inicial)
-        log(f"Preenchendo data final: {data_final}", log_file)
+        log(f"Preenchendo data final: {data_final}", log_filename)
         wait.until(EC.presence_of_element_located((By.XPATH, '//*[@id="txtDataFimCotacao"]'))).send_keys(data_final)
 
         # Clica em pesquisar
-        log('Clicando no botão pesquisar...', log_file)
+        log('Clicando no botão pesquisar...', log_filename)
         wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="btnPesquisar"]'))).click()
-        log('Botão pesquisar clicado.', log_file)
+        log('Botão pesquisar clicado.', log_filename)
 
         # Aguarda tabela
-        log('Aguardando carregamento da tabela de resultados...', log_file)
+        log('Aguardando carregamento da tabela de resultados...', log_filename)
         wait.until(EC.visibility_of_element_located((By.ID, 'tblResultadoListaCount')))
-        log('Tabela de resultados carregada.', log_file)
+        log('Tabela de resultados carregada.', log_filename)
 
         pagina = 1
 
         while True:
-            log(f'Coletando dados da página {pagina}...', log_file)
+            log(f'Coletando dados da página {pagina}...', log_filename)
 
             # Save HTML of the current page
             salvar_html(driver, pagina, html_dir)
             
             # Extract data from the current page's HTML
             html_content = driver.page_source
-            dados_extraidos_pagina = extrair_dados_html(html_content, log_file)
+            dados_extraidos_pagina = extrair_dados_html(html_content, log_filename)
             if dados_extraidos_pagina:
                 adicionar_dados_a_planilha(dados_extraidos_pagina)
-                log(f'{len(dados_extraidos_pagina)} itens da página {pagina} adicionados à planilha.', log_file)
+                log(f'{len(dados_extraidos_pagina)} itens da página {pagina} adicionados à planilha.', log_filename)
             else:
-                log(f'Nenhum item encontrado na página {pagina} para adicionar à planilha.', log_file)
+                log(f'Nenhum item encontrado na página {pagina} para adicionar à planilha.', log_filename)
 
             # Check for next page button
             try:
@@ -186,25 +202,25 @@ def raspar_comprasnet(data_inicial, data_final, site):
                 botao_proxima = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tblResultadoListaCount_next"]')))
                 classe = botao_proxima.get_attribute('class')
                 if 'disabled' in classe:
-                    log('Não há mais páginas. Finalizando raspagem.', log_file)
+                    log('Não há mais páginas. Finalizando raspagem.', log_filename)
                     break
                 else:
-                    log(f'Clicando para ir para a próxima página ({pagina + 1})...', log_file)
+                    log(f'Clicando para ir para a próxima página ({pagina + 1})...', log_filename)
                     botao_proxima.click()
                     pagina += 1
                     time.sleep(3) # Increased sleep to ensure page fully loads and renders new data
             except NoSuchElementException:
-                log('Botão "Próxima" página não encontrado. Assumindo que não há mais páginas. Finalizando.', log_file)
+                log('Botão "Próxima" página não encontrado. Assumindo que não há mais páginas. Finalizando.', log_filename)
                 break
             except TimeoutException:
-                log('Tempo limite excedido ao esperar pelo botão "Próxima". Finalizando.', log_file)
+                log('Tempo limite excedido ao esperar pelo botão "Próxima". Finalizando.', log_filename)
                 break
 
     except Exception as e:
-        log(f'Erro crítico ocorrido durante a raspagem: {e}', log_file)
+        log(f'Erro crítico ocorrido durante a raspagem: {e}', log_filename)
     finally:
         driver.quit()
-        log('Navegador fechado. Processo de raspagem concluído.', log_file)
+        log('Navegador fechado. Processo de raspagem concluído.', log_filename)
 
 if __name__ == "__main__":
     data_inicial = "29/05/2025"
