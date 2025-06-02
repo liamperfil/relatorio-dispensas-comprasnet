@@ -1,6 +1,6 @@
 # Relatório de Dispensas Comprasnet Bahia
 
-Este projeto contém um script Python (`script.py`) desenvolvido para automatizar a pesquisa e extração de dados de compras eletrônicas no site Comprasnet Bahia. O objetivo é coletar informações detalhadas sobre as dispensas de licitação e consolidá-las em uma planilha Excel para análise.
+Este projeto contém um script Python (`script.py`) desenvolvido para automatizar a **pesquisa e extração de dados de compras eletrônicas** no site Comprasnet Bahia. O objetivo é coletar **informações detalhadas sobre as dispensas de licitação** e consolidá-las em uma planilha Excel para análise.
 
 ## O que o Script Faz
 

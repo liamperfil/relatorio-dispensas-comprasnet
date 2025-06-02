@@ -15,46 +15,62 @@ def iniciar_driver():
     options.add_argument("--start-maximized")
     return webdriver.Chrome(options=options)
 
-# Modificação: log_file agora é dinâmico, definido na função raspar_comprasnet
 def log(mensagem, arquivo_log):
     """Logs messages to console and a specified file."""
     print(mensagem)
-    # Modificação: Garante que o diretório 'log' exista antes de escrever o arquivo
     log_dir = os.path.dirname(arquivo_log)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     with open(arquivo_log, 'a', encoding='utf-8') as f:
         f.write(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")} - {mensagem}\n')
 
-# Modificação: html_dir e nome_arquivo agora usam o formato AAAA-mm-dd-pgX.html
 def salvar_html(driver, pagina, html_dir):
     """Saves the current page HTML to a file in the specified directory."""
     if not os.path.exists(html_dir):
         os.makedirs(html_dir)
-        log(f"Diretório criado: {html_dir}", log_filename) # Usa log_filename global
+        log(f"Diretório criado: {html_dir}", log_filename)
     
-    # Formato AAAA-mm-dd-pgX.html
     data_atual = datetime.now().strftime("%Y-%m-%d")
     nome_arquivo = os.path.join(html_dir, f'{data_atual}-pg{pagina}.html')
     
     with open(nome_arquivo, 'w', encoding='utf-8') as f:
         f.write(driver.page_source)
-    log(f"HTML salvo em {nome_arquivo}", log_filename) # Usa log_filename global
+    log(f"HTML salvo em {nome_arquivo}", log_filename)
+
+def normalizar_valor_numerico(texto):
+    """Normaliza uma string para um float, removendo 'R$', pontos e vírgulas."""
+    if not texto:
+        return 0.0
+    # Remove 'R$', pontos e substitui vírgula por ponto
+    texto_limpo = texto.replace('R$', '').replace('.', '').replace(',', '.').strip()
+    try:
+        return float(texto_limpo)
+    except ValueError:
+        return 0.0 # Retorna 0.0 se a conversão falhar
+
+def normalizar_qtde(texto):
+    """Normaliza a quantidade para um float, removendo pontos e vírgulas."""
+    if not texto:
+        return 0.0
+    # Remove pontos e vírgulas, tenta converter para float
+    texto_limpo = texto.replace('.', '').replace(',', '.').strip()
+    try:
+        return float(texto_limpo)
+    except ValueError:
+        return 0.0 # Retorna 0.0 se a conversão falhar
 
 def extrair_dados_html(html_content, log_file):
     """
     Extracts item data from the HTML content, specifically looking for
     child tables within each dispense result and all their items.
+    Applies data normalization for numerical and monetary fields.
     """
     soup = BeautifulSoup(html_content, 'html.parser')
     dados_extraidos = []
 
-    # Find all main result tables, each potentially containing multiple dispenses
-    # These are the tables that encapsulate each 'dispensa' result
     main_dispense_tables = soup.find_all('table', id='tblResultadoLista')
 
     for main_table in main_dispense_tables:
-        # Extract Número and Abertura from the main table's tbody
         numero_dispensa = ''
         data_abertura = ''
         main_table_body_row = main_table.find('tbody').find('tr', recursive=False)
@@ -66,26 +82,19 @@ def extrair_dados_html(html_content, log_file):
                 data_abertura = cols_main[1].get_text(strip=True)
 
 
-        # Within each main dispense table, find the child table that lists the items
         child_table = main_table.find('table', id='tblResultadoLista_Child')
         
         if child_table:
-            # Important: Iterate over all <tbody> elements within tblResultadoLista_Child
-            # Each <tbody> seems to represent a block for a single item and its status
-            all_tbodies = child_table.find_all('tbody', recursive=False) # Only direct children
+            all_tbodies = child_table.find_all('tbody', recursive=False)
 
             for tbody in all_tbodies:
                 item_row = None
                 situacao_item = ''
 
-                # Find the direct <tr> children within this tbody
-                # We are looking for the row that contains the item's data (7 columns)
                 for row in tbody.find_all('tr', recursive=False):
-                    cols = row.find_all('td', recursive=False) # Get direct td children
-                    # Check if it's an item row (7 columns, and first col does not have colspan)
+                    cols = row.find_all('td', recursive=False)
                     if len(cols) == 7 and not cols[0].has_attr('colspan'):
                         item_row = row
-                    # Check if it's the 'Situação do Item' row
                     elif len(cols) == 1 and cols[0].has_attr('colspan') and 'Situação do Item:' in cols[0].get_text(strip=True):
                         situacao_item = cols[0].get_text(strip=True).replace('Situação do Item:', '').strip()
                 
@@ -95,11 +104,12 @@ def extrair_dados_html(html_content, log_file):
                     uf = cols[1].get_text(strip=True) if len(cols) > 1 and cols[1] else ''
                     vencedor = cols[2].get_text(strip=True) if len(cols) > 2 and cols[2] else ''
                     marca = cols[3].get_text(strip=True) if len(cols) > 3 and cols[3] else ''
-                    qtde = cols[4].get_text(strip=True) if len(cols) > 4 and cols[4] else ''
-                    unitario = cols[5].get_text(strip=True) if len(cols) > 5 and cols[5] else ''
-                    total = cols[6].get_text(strip=True) if len(cols) > 6 and cols[6] else ''
+                    
+                    # Aplica normalização
+                    qtde = normalizar_qtde(cols[4].get_text(strip=True)) if len(cols) > 4 and cols[4] else 0.0
+                    unitario = normalizar_valor_numerico(cols[5].get_text(strip=True)) if len(cols) > 5 and cols[5] else 0.0
+                    total = normalizar_valor_numerico(cols[6].get_text(strip=True)) if len(cols) > 6 and cols[6] else 0.0
 
-                    # Append the new fields: Número, Abertura, Situação do Item
                     dados_extraidos.append([numero_dispensa, data_abertura, descricao, uf, vencedor, marca, qtde, unitario, total, situacao_item])
                 else:
                     log(f"Nenhuma linha de item com 7 colunas encontrada neste bloco <tbody>. Conteúdo do tbody: {tbody.get_text(strip=True)[:100]}...", log_file)
@@ -108,7 +118,6 @@ def extrair_dados_html(html_content, log_file):
 
     return dados_extraidos
 
-
 def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
     """Adds extracted data to an Excel spreadsheet, creating it with headers if it doesn't exist."""
     if not os.path.exists(nome_planilha):
@@ -116,14 +125,14 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
         sheet = workbook.active
         sheet.title = "Sheet1"
         sheet.append(['Número', 'Abertura', 'Descrição', 'Uf', 'Vencedor', 'Marca', 'Qtde', 'Unitário', 'Total', 'Situação do Item'])
-        log(f"Criado novo arquivo Excel: {nome_planilha} com cabeçalhos.", log_filename) # Usa log_filename global
+        log(f"Criado novo arquivo Excel: {nome_planilha} com cabeçalhos.", log_filename)
     else:
         try:
             workbook = openpyxl.load_workbook(nome_planilha)
             sheet = workbook['Sheet1']
-            log(f"Abrindo arquivo Excel existente: {nome_planilha}.", log_filename) # Usa log_filename global
+            log(f"Abrindo arquivo Excel existente: {nome_planilha}.", log_filename)
         except Exception as e:
-            log(f"Erro ao abrir o arquivo Excel {nome_planilha}: {e}. Tentando criar um novo.", log_filename) # Usa log_filename global
+            log(f"Erro ao abrir o arquivo Excel {nome_planilha}: {e}. Tentando criar um novo.", log_filename)
             workbook = openpyxl.Workbook()
             sheet = workbook.active
             sheet.title = "Sheet1"
@@ -133,30 +142,27 @@ def adicionar_dados_a_planilha(dados, nome_planilha='planilha.xlsx'):
         try:
             sheet.append(row_data)
         except Exception as e:
-            log(f"Erro ao adicionar linha {row_data} ao Excel: {e}", log_filename) # Usa log_filename global
+            log(f"Erro ao adicionar linha {row_data} ao Excel: {e}", log_filename)
     workbook.save(nome_planilha)
-    log(f"Dados salvos em {nome_planilha}.", log_filename) # Usa log_filename global
+    log(f"Dados salvos em {nome_planilha}.", log_filename)
 
 def raspar_comprasnet():
     """Automates the web scraping process."""
     driver = iniciar_driver()
     wait = WebDriverWait(driver, 60)
     
-    # Modificação: Define o nome do arquivo de log com timestamp e dentro do diretório 'log'
     global log_filename
     timestamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-    log_filename = os.path.join('log', f'log_{timestamp}.txt') # Define o caminho completo para o log
+    log_filename = os.path.join('log', f'log_{timestamp}.txt')
 
-    # Removido: Limpeza de arquivos e diretórios anteriores
     html_dir = 'html'
 
-    log('Iniciando raspagem no Comprasnet...', log_filename) # log_filename agora é o caminho completo
+    log('Iniciando raspagem no Comprasnet...', log_filename)
 
     try:
         driver.get("https://comprasnet3.ba.gov.br/CompraEletronica/ResultadoFiltro.asp?token=68385a59c508b")
         log('Site acessado.', log_filename)
         
-        # Aguarda tabela
         log('Aguardando carregamento da tabela de resultados...', log_filename)
         wait.until(EC.visibility_of_element_located((By.ID, 'tblResultadoListaCount')))
         log('Tabela de resultados carregada.', log_filename)
@@ -166,10 +172,8 @@ def raspar_comprasnet():
         while True:
             log(f'Coletando dados da página {pagina}...', log_filename)
 
-            # Save HTML of the current page
             salvar_html(driver, pagina, html_dir)
             
-            # Extract data from the current page's HTML
             html_content = driver.page_source
             dados_extraidos_pagina = extrair_dados_html(html_content, log_filename)
             if dados_extraidos_pagina:
@@ -178,9 +182,7 @@ def raspar_comprasnet():
             else:
                 log(f'Nenhum item encontrado na página {pagina} para adicionar à planilha.', log_filename)
 
-            # Check for next page button
             try:
-                # Re-locate the button to ensure it's fresh after page changes
                 botao_proxima = wait.until(EC.element_to_be_clickable((By.XPATH, '//*[@id="tblResultadoListaCount_next"]')))
                 classe = botao_proxima.get_attribute('class')
                 if 'disabled' in classe:
@@ -190,7 +192,7 @@ def raspar_comprasnet():
                     log(f'Clicando para ir para a próxima página ({pagina + 1})...', log_filename)
                     botao_proxima.click()
                     pagina += 1
-                    time.sleep(3) # Increased sleep to ensure page fully loads and renders new data
+                    time.sleep(3)
             except NoSuchElementException:
                 log('Botão "Próxima" página não encontrado. Assumindo que não há mais páginas. Finalizando.', log_filename)
                 break
