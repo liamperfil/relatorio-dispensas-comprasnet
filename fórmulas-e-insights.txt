@@ -1,0 +1,16 @@
+Produtos com mais saída.
+=CONT.SE(C:C; C2)
+
+Verifica dispensas repetidas.
+=CONT.SES($A$2:A2;$A2;$C$2:C2;$C2)
+
+Média de preço do produto.
+Marcas.
+Acompanhar itens de interesse. 
+Estante em aço. 
+Beliche. 
+Lampada.
+TV
+Refrigerador
+
+20/08/2025

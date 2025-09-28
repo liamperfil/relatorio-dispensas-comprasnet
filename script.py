@@ -203,7 +203,6 @@ def raspar_comprasnet():
     except Exception as e:
         log(f'Erro crítico ocorrido durante a raspagem: {e}', log_filename)
     finally:
-        input("Pressione Enter para fechar o navegador...")
         driver.quit()
         log('Navegador fechado. Processo de raspagem concluído.', log_filename)
 
